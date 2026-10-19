@@ -62,13 +62,9 @@ def accept_join_request(message):
         user_id = message.from_user.id
         first_name = message.from_user.first_name or "User"
         
-        # User ko database me save karo broadcast ke liye
         add_user(user_id, first_name)
-        
-        # Join request approve karo
         bot.approve_chat_join_request(chat_id=message.chat.id, user_id=user_id)
         
-        # Welcome message bhejo
         welcome_text = f"Hello {first_name}! 👋\n\nYour join request has been accepted. Welcome!"
         bot.send_message(chat_id=user_id, text=welcome_text)
         
@@ -84,32 +80,34 @@ def send_welcome(message):
     add_user(user_id, first_name)
     
     if user_id == ADMIN_ID:
-        bot.reply_to(message, "Hello Admin! ✅\n\nSabhi users ko message bhejne ke liye use karein:\n`/broadcast [Aapka Message]`", parse_mode='Markdown')
+        bot.reply_to(message, "Hello Admin! ✅\n\nSabhi users ko photo/video/text ke sath broadcast bhejne ke liye ye command use karein:\n`/broadcast`", parse_mode='Markdown')
     else:
         bot.reply_to(message, "Bot is active and running for channel join requests! ✅")
 
-# ============ BROADCAST COMMAND (Admin Only) ============
+# ============ ADVANCED BROADCAST SYSTEM ============
 @bot.message_handler(commands=['broadcast'])
-def broadcast_message(message):
+def broadcast_command(message):
     if message.from_user.id != ADMIN_ID:
         bot.reply_to(message, "❌ You are not authorized to use this command!")
         return
     
-    # Message extract karo (/broadcast ke baad ka text)
-    text_to_broadcast = message.text.replace('/broadcast', '').strip()
-    if not text_to_broadcast:
-        bot.reply_to(message, "⚠️ Please provide a message to broadcast!\nExample: `/broadcast Hello everyone!`", parse_mode='Markdown')
+    msg = bot.reply_to(message, "📢 **Broadcast Mode On!**\n\nAb aap jo bhi bhejna chahte hain (Text, Image + Caption, Video, Link), wo yahan forward ya send karein:")
+    bot.register_next_step_handler(msg, process_broadcast)
+
+def process_broadcast(message):
+    if message.from_user.id != ADMIN_ID:
         return
     
     users = get_all_users()
     success = 0
     failed = 0
     
-    status_msg = bot.reply_to(message, f"📢 Broadcasting to {len(users)} users...")
+    status_msg = bot.reply_to(message, f"📢 Broadcasting to {len(users)} users... Please wait ⏳")
     
     for user_id in users:
         try:
-            bot.send_message(user_id, f"📢 **Announcement:**\n\n{text_to_broadcast}", parse_mode='Markdown')
+            # Agar admin ne media (Photo/Video/Document) ya text bheja hai, to use copy/forward kar do
+            bot.copy_message(chat_id=user_id, from_chat_id=message.chat.id, message_id=message.message_id)
             success += 1
         except Exception as e:
             failed += 1
@@ -125,5 +123,5 @@ def broadcast_message(message):
 if __name__ == "__main__":
     init_db()
     run_keepalive_in_thread()
-    print("Bot is starting with Keepalive & Broadcast system...")
+    print("Bot is starting with Advanced Broadcast & Keepalive system...")
     bot.infinity_polling()
