@@ -82,7 +82,7 @@ def accept_join_request(message):
         add_user(user_id, first_name)
         bot.approve_chat_join_request(chat_id=message.chat.id, user_id=user_id)
         
-        welcome_text = f"Hello {first_name}! 👋\n\nYour join request has been accepted. Welcome!"
+        welcome_text = f"Hello {first_name}! 👋\n\nYour join request has been accepted. Welcome! /start"
         bot.send_message(chat_id=user_id, text=welcome_text)
         
         print(f"Approved join request for user {user_id}")
@@ -99,7 +99,7 @@ def send_welcome(message):
     if user_id == ADMIN_ID:
         bot.reply_to(message, "Hello Admin! ✅\n\nSabhi users ko photo/video/text ke sath broadcast bhejne ke liye ye command use karein:\n`/broadcast`", parse_mode='Markdown')
     else:
-        bot.reply_to(message, "Bot is active and running for channel join requests! ✅")
+        bot.reply_to(message, "👋 Hey! Add me to your group & channel to accept join request automatically! 😊")
 
 # ============ ADVANCED BROADCAST SYSTEM (Admin Only) ============
 @bot.message_handler(commands=['broadcast'])
