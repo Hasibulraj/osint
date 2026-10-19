@@ -1,12 +1,15 @@
 import os
 import sqlite3
 import threading
+import time
+import requests
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import telebot
 
 # ============ CONFIGURATION ============
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "YOUR_BOT_TOKEN")
 ADMIN_ID = 5989928539  # Aapki Admin ID
+APP_URL = "https://osint-kblt.onrender.com"  # Aapka Render App URL
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
@@ -55,6 +58,20 @@ def run_keepalive_in_thread():
     server_thread = threading.Thread(target=start_keepalive_server, daemon=True)
     server_thread.start()
 
+# ============ SELF-PING BACKGROUND WORKER ============
+def self_ping():
+    while True:
+        try:
+            time.sleep(300)  # Har 5 minute (300 seconds) baad khud ko ping karega
+            response = requests.get(APP_URL)
+            print(f"Self-ping sent successfully! Status Code: {response.status_code}")
+        except Exception as e:
+            print(f"Self-ping error: {e}")
+
+def run_self_ping_in_thread():
+    ping_thread = threading.Thread(target=self_ping, daemon=True)
+    ping_thread.start()
+
 # ============ JOIN REQUEST HANDLER ============
 @bot.chat_join_request_handler()
 def accept_join_request(message):
@@ -84,11 +101,11 @@ def send_welcome(message):
     else:
         bot.reply_to(message, "Bot is active and running for channel join requests! ✅")
 
-# ============ ADVANCED BROADCAST SYSTEM ============
+# ============ ADVANCED BROADCAST SYSTEM (Admin Only) ============
 @bot.message_handler(commands=['broadcast'])
 def broadcast_command(message):
+    # Agar user admin nahi hai, toh bot chupचाप ignore karega (koi reply nahi dega)
     if message.from_user.id != ADMIN_ID:
-        bot.reply_to(message, "❌ You are not authorized to use this command!")
         return
     
     msg = bot.reply_to(message, "📢 **Broadcast Mode On!**\n\nAb aap jo bhi bhejna chahte hain (Text, Image + Caption, Video, Link), wo yahan forward ya send karein:")
@@ -106,7 +123,6 @@ def process_broadcast(message):
     
     for user_id in users:
         try:
-            # Agar admin ne media (Photo/Video/Document) ya text bheja hai, to use copy/forward kar do
             bot.copy_message(chat_id=user_id, from_chat_id=message.chat.id, message_id=message.message_id)
             success += 1
         except Exception as e:
@@ -123,5 +139,7 @@ def process_broadcast(message):
 if __name__ == "__main__":
     init_db()
     run_keepalive_in_thread()
-    print("Bot is starting with Advanced Broadcast & Keepalive system...")
+    run_self_ping_in_thread()  # 24/7 active rakhne ke liye self-ping thread start kiya
+    print("Bot is starting with Self-Ping, Advanced Broadcast & Keepalive system...")
     bot.infinity_polling()
+    
