@@ -17,9 +17,11 @@ bot = telebot.TeleBot(BOT_TOKEN)
 def init_db():
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
+    # status column add kiya hai active/blocked track karne ke liye
     c.execute('''CREATE TABLE IF NOT EXISTS users (
         user_id INTEGER PRIMARY KEY,
-        first_name TEXT
+        first_name TEXT,
+        status TEXT DEFAULT 'active'
     )''')
     conn.commit()
     conn.close()
@@ -27,17 +29,26 @@ def init_db():
 def add_user(user_id, first_name):
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
-    c.execute("INSERT OR IGNORE INTO users (user_id, first_name) VALUES (?, ?)", (user_id, first_name))
+    c.execute("INSERT OR IGNORE INTO users (user_id, first_name, status) VALUES (?, ?, 'active')", (user_id, first_name))
+    # Agar user pehle se hai aur dobara start kiya ya block khol diya, toh active kar do
+    c.execute("UPDATE users SET status = 'active', first_name = ? WHERE user_id = ?", (first_name, user_id))
     conn.commit()
     conn.close()
 
 def get_all_users():
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
-    c.execute("SELECT user_id FROM users")
+    c.execute("SELECT user_id FROM users WHERE status = 'active'")
     users = c.fetchall()
     conn.close()
     return [user[0] for user in users]
+
+def mark_user_blocked(user_id):
+    conn = sqlite3.connect('users.db')
+    c = conn.cursor()
+    c.execute("UPDATE users SET status = 'blocked' WHERE user_id = ?", (user_id,))
+    conn.commit()
+    conn.close()
 
 # ============ KEEPALIVE SERVER (Render ke liye) ============
 class HealthHandler(BaseHTTPRequestHandler):
@@ -97,14 +108,56 @@ def send_welcome(message):
     add_user(user_id, first_name)
     
     if user_id == ADMIN_ID:
-        bot.reply_to(message, "Hello Admin! ✅\n\nSabhi users ko photo/video/text ke sath broadcast bhejne ke liye ye command use karein:\n`/broadcast`", parse_mode='Markdown')
+        bot.reply_to(message, "Hello Admin! ✅\n\nCommands available:\n👉 `/broadcast` - Sabhi ko message bhejne ke liye\n👉 `/status` - Database & Storage stats dekhne ke liye", parse_mode='Markdown')
     else:
         bot.reply_to(message, "👋 Hey! Add me to your group & channel to accept join request automatically! 😊")
+
+# ============ STATUS / STORAGE COMMAND (Admin Only) ============
+@bot.message_handler(commands=['status', 'stats'])
+def status_command(message):
+    if message.from_user.id != ADMIN_ID:
+        return
+    
+    try:
+        # Database file size check karein
+        if os.path.exists('users.db'):
+            file_size_bytes = os.path.getsize('users.db')
+            file_size_kb = file_size_bytes / 1024
+        else:
+            file_size_kb = 0
+        
+        conn = sqlite3.connect('users.db')
+        c = conn.cursor()
+        
+        # Total users count
+        c.execute("SELECT COUNT(*) FROM users")
+        total_users = c.fetchone()[0]
+        
+        # Active users count
+        c.execute("SELECT COUNT(*) FROM users WHERE status = 'active'")
+        active_users = c.fetchone()[0]
+        
+        # Blocked users count
+        c.execute("SELECT COUNT(*) FROM users WHERE status = 'blocked'")
+        blocked_users = c.fetchone()[0]
+        
+        conn.close()
+        
+        status_text = (
+            f"📊 **Bot & Database Status:**\n\n"
+            f"👥 Total Users: `{total_users}`\n"
+            f"🟢 Active Users: `{active_users}`\n"
+            f"❌ Blocked Bot: `{blocked_users}`\n"
+            f"💾 Database Size: `{file_size_kb:.2f} KB`\n"
+            f"📁 File: `users.db`"
+        )
+        bot.reply_to(message, status_text, parse_mode='Markdown')
+    except Exception as e:
+        bot.reply_to(message, f"Error getting status: {e}")
 
 # ============ ADVANCED BROADCAST SYSTEM (Admin Only) ============
 @bot.message_handler(commands=['broadcast'])
 def broadcast_command(message):
-    # Agar user admin nahi hai, toh bot chupचाप ignore karega (koi reply nahi dega)
     if message.from_user.id != ADMIN_ID:
         return
     
@@ -119,7 +172,7 @@ def process_broadcast(message):
     success = 0
     failed = 0
     
-    status_msg = bot.reply_to(message, f"📢 Broadcasting to {len(users)} users... Please wait ⏳")
+    status_msg = bot.reply_to(message, f"📢 Broadcasting to {len(users)} active users... Please wait ⏳")
     
     for user_id in users:
         try:
@@ -127,12 +180,13 @@ def process_broadcast(message):
             success += 1
         except Exception as e:
             failed += 1
+            mark_user_blocked(user_id) # Agar user ne block kiya toh database me status 'blocked' kar do
             print(f"Failed to send broadcast to {user_id}: {e}")
             
     bot.edit_message_text(
         chat_id=message.chat.id,
         message_id=status_msg.message_id,
-        text=f"✅ **Broadcast Completed!**\n\nSuccessfully sent: `{success}`\nFailed (Blocked bot): `{failed}`",
+        text=f"✅ **Broadcast Completed!**\n\nSuccessfully sent: `{success}`\nFailed / Blocked: `{failed}`",
         parse_mode='Markdown'
     )
 
@@ -140,6 +194,5 @@ if __name__ == "__main__":
     init_db()
     run_keepalive_in_thread()
     run_self_ping_in_thread()  # 24/7 active rakhne ke liye self-ping thread start kiya
-    print("Bot is starting with Self-Ping, Advanced Broadcast & Keepalive system...")
+    print("Bot is starting with Self-Ping, Advanced Broadcast, Status & Keepalive system...")
     bot.infinity_polling()
-    
